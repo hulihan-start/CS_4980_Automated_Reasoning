@@ -4,6 +4,7 @@ from pprint import pprint
 
 from typing import List, Set, Tuple, Optional, Iterator
 from classes import *
+import torch
 
 def cdcl_solve(formula: Formula) -> Optional[Assignments]:
     """
@@ -12,7 +13,7 @@ def cdcl_solve(formula: Formula) -> Optional[Assignments]:
     If SAT, return the assignments.
     If UNSAT, return None.
     """
-    assignments = Assignments()
+    assignments = Assignments(formula.variables().size(0))
     
     # First, do unit propagation to assign the initial unit clauses 
     reason, clause = unit_propagation(formula, assignments)
@@ -22,7 +23,8 @@ def cdcl_solve(formula: Formula) -> Optional[Assignments]:
     while not all_variables_assigned(formula, assignments):
         var, val = pick_branching_variable(formula, assignments)
         assignments.dl += 1
-        assignments.assign(var, val, antecedent=None)
+        # assignments.assign(var, val, antecedent=None)
+        assignments.assign(var, val, -1)
         while True:
             reason, clause = unit_propagation(formula, assignments)
             if reason != 'conflict':
@@ -40,7 +42,7 @@ def cdcl_solve(formula: Formula) -> Optional[Assignments]:
 
             # The learnt clause must be a unit clause, so the
             # next step must again be unit progagation
-
+    print(assignments)
     return assignments
 
 def add_learnt_clause(formula: Formula, clause: Clause):
@@ -50,7 +52,7 @@ def all_variables_assigned(formula: Formula, assignments: Assignments) -> bool:
     return len(formula.variables()) == len(assignments)
 
 def pick_branching_variable(formula: Formula, assignments: Assignments) -> Tuple[int, bool]:
-    unassigned_vars = [var for var in formula.variables() if var not in assignments]
+    unassigned_vars = [var.item() for var in formula.variables() if assignments.assigns[var-1][4]==0]
     var = random.choice(unassigned_vars)
     val = random.choice([True, False])
     return (var, val)
@@ -76,11 +78,16 @@ def clause_status(clause: Clause, assignments: Assignments) -> str:
     """
     values = []
     for literal in clause:
-        if literal.variable not in assignments:
-            values.append(None)
-        else:
-            values.append(assignments.value(literal))
-
+        if literal < 0:
+            if assignments.assigns[(-literal)-1][4] == 1:
+                values.append(assignments.value(literal))
+            else:
+                values.append(None)
+        elif literal > 0:
+            if assignments.assigns[literal-1][4] == 1:
+                values.append(assignments.value(literal))
+            else:
+                values.append(None)
     if True in values:
         return 'satisfied'
     elif values.count(False) == len(values):
@@ -102,12 +109,13 @@ def unit_propagation(formula: Formula, assignments: Assignments) -> Tuple[str, O
                 continue
             elif status == 'unit':
                 # select the literal to propagate
-                literal = next(literal for literal in clause if literal.variable not in assignments)
-                var = literal.variable
-                val = not literal.negation
+                
+                for literal in clause:
+                    if assignments.assigns[abs(literal)-1][4] == 0:
+                        break
 
                 # assign the variable according to unit rule
-                assignments.assign(var, val, antecedent=clause)
+                assignments.assign(literal, literal>0, antecedent=torch.where(torch.all(clause == formula.clauses, dim=1))[0])
                 finish = False
             else:
                 # conflict
@@ -120,25 +128,35 @@ def resolve(a: Clause, b: Clause, x: int) -> Clause:
     """
     The resolution operation
     """
+    a = torch.tensor([1,2,3,4,5])
+    b = torch.tensor([1,-2,3,-6,5])
+    c = torch.cat((a.view(-1), b.view(-1)))
+    cp = c[c>0]
+    cn = c[c<0]
+    equal_values_mask = torch.abs(cp) == torch.abs(cn)
+    #  here we need to remove the tensor with both pos and neg values
+    print(c, equal_values_mask, c[equal_values_mask])
+
     result = set(a.literals + b.literals) - {Literal(x, True), Literal(x, False)}
     result = list(result)
-    return Clause(result)
+    return result
 
 
-def conflict_analysis(clause: Clause, assignments: Assignments) -> Tuple[int, Clause]:
+def conflict_analysis(clause: torch.tensor, assignments: Assignments) -> Tuple[int, Clause]:
     if assignments.dl == 0:
         return (-1, None)
  
     # literals with current decision level
-    literals = [literal for literal in clause if assignments[literal.variable].dl == assignments.dl]
+    literals = [literal for literal in clause if assignments.assigns[abs(literal)-1][2] == assignments.dl]
+
     while len(literals) != 1:
         # implied literals
-        literals = filter(lambda lit: assignments[lit.variable].antecedent != None, literals)
-
+        literals = filter(lambda lit: assignments.assigns[abs(lit)-1][1] != -1, literals)
+        
         # select any literal that meets the criterion
         literal = next(literals)
-        antecedent = assignments[literal.variable].antecedent
-        clause = resolve(clause, antecedent, literal.variable)
+        antecedent = assignments.assigns[abs(literal)-1][1]
+        clause = resolve(clause, antecedent, abs(literal))
 
         # literals with current decision level
         literals = [literal for literal in clause if assignments[literal.variable].dl == assignments.dl]
@@ -156,21 +174,28 @@ def parse_dimacs_cnf(content: str) -> Formula:
     """
     parse the DIMACS cnf file format into corresponding Formula.
     """
-    clauses = [Clause([])]
+
+    max_len = 0
+    lines = 0
     for line in content.splitlines():
         tokens = line.split()
         if len(tokens) != 0 and tokens[0] not in ("p", "c"):
-            for tok in tokens:
+            lines += 1
+            if max_len < len(tokens):
+                max_len = len(tokens)
+    clauses = torch.zeros((lines, max_len-1), dtype=int)
+
+    row_num = 0
+    for line in content.splitlines():
+        tokens = line.split()
+        if len(tokens) != 0 and tokens[0] not in ("p", "c"):
+            for i, tok in enumerate(tokens):
                 lit = int(tok)
                 if lit == 0:
-                    clauses.append(Clause([]))
+                    pass
                 else:
-                    var = abs(lit)
-                    neg = lit < 0
-                    clauses[-1].literals.append(Literal(var, neg))
-
-    if len(clauses[-1]) == 0:
-        clauses.pop()
+                    clauses[row_num][i] = lit
+            row_num += 1
 
     return Formula(clauses)
 
