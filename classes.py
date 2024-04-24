@@ -52,7 +52,8 @@ class Formula:
         """
         Remove duplicate literals in clauses.
         """
-        self.__variables = torch.unique(torch.abs(clauses))[1:] #pass
+        self.__variables = torch.unique(torch.abs(clauses[:, 1:])) #pass
+        self.__variables = self.__variables[self.__variables!=0]
         self.clauses = clauses
         # self.clauses = []
         # self.__variables = set()
@@ -69,7 +70,7 @@ class Formula:
         return self.__variables
 
     def __repr__(self):
-        return ' ∧ '.join(f'({"∨".join([str(i) if i>0 else "¬" + str(-i) for i in clause if i!=0])})' for clause in self.clauses.tolist())
+        return ' ∧ '.join(f'({"∨".join([str(i) if i>0 else "¬" + str(-i) for i in clause if i!=0])})' for clause in self.clauses[:, 1:].tolist())
 
     def __iter__(self) -> Iterator[torch.tensor]:
         return iter(self.clauses)
@@ -96,9 +97,12 @@ class Assignments(dict):
         2: dl
         3: is visited
         4: is in
+        5: idx
         '''
-        self.assigns = torch.zeros((max_len, 5))
-        self.assigns[1, :] = -1
+        self.assigns = torch.zeros((max_len, 6), dtype=int)
+        self.assigns[:, 1] = -1
+        for i in range(max_len):
+            self.assigns[i, 5] = i+1
         # the decision level
         self.dl = 0
 
@@ -125,11 +129,12 @@ class Assignments(dict):
 
     def assign(self, variable, val, antecedent: int):
         # self[variable] = Assignment(value, antecedent, self.dl)
-        val = variable if val else -variable
-        self.assigns[val-1][0] = val
-        self.assigns[val-1][1] = antecedent
-        self.assigns[val-1][2] = self.dl
-        self.assigns[val-1][4] = 1
+        variable = abs(variable)
+        self.assigns[variable-1][0] = val
+        self.assigns[variable-1][1] = antecedent
+        self.assigns[variable-1][2] = self.dl
+        self.assigns[variable-1][3] = 1
+        self.assigns[variable-1][4] = 1
 
     def unassign(self, variable: int):
         self.pop(variable)
