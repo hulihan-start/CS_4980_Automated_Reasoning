@@ -16,7 +16,7 @@ def cdcl_solve(formula: Formula) -> Optional[Assignments]:
     assignments = Assignments(formula.variables().size(0))
     # First, do unit propagation to assign the initial unit clauses 
     reason, clause = unit_propagation(formula, assignments)
-    print(assignments.assigns)
+    #print(assignments.assigns)
     if reason == 'conflict':
         return None
     
@@ -24,30 +24,23 @@ def cdcl_solve(formula: Formula) -> Optional[Assignments]:
         var, val = pick_branching_variable(formula, assignments)
         assignments.dl += 1
         # assignments.assign(var, val, antecedent=None)
-        print(assignments.dl, var, val)
-        assignments.assign(var, val, -1)
+        # I changed the antecedent value into -2
+        assignments.assign(var, val, -2)
         while True:
             # print('before unit_propagation', assignments.assigns, formula.clauses.shape)
             reason, clause = unit_propagation(formula, assignments)
-            print('after unit_propagation', reason, clause, assignments.assigns)
+            #print('after unit_propagation', reason, clause, assignments.assigns)
             if reason != 'conflict':
-                # no conflict after unit propagation, we back
-                # to the decision (guessing) step
                 break
-            
             b, learnt_clause = conflict_analysis(clause, assignments, formula)
             if b < 0:
                 return None
-            print(assignments.assigns)
             add_learnt_clause(formula, learnt_clause)
-            print('learn', assignments.assigns)
             backtrack(assignments, b)
-            print('backtrack' , assignments.assigns, b)
             assignments.dl = b
 
             # The learnt clause must be a unit clause, so the
             # next step must again be unit progagation
-    print(assignments)
     return assignments
 
 def add_learnt_clause(formula: Formula, clause: Clause):
@@ -57,6 +50,7 @@ def add_learnt_clause(formula: Formula, clause: Clause):
         new_clause.append(0)
     clause = torch.tensor(new_clause)
     formula.clauses = torch.cat((formula.clauses, clause.unsqueeze(0)))
+    print(formula.clauses)
 
 def all_variables_assigned(formula: Formula, assignments: Assignments) -> bool:
     return len(formula.variables()) == len(assignments)
@@ -72,11 +66,14 @@ def backtrack(assignments: Assignments, b: int):
     for var, assignment in enumerate(assignments.assigns):
         if assignment[2] > b:
             to_remove.append(var)
-
+            print(to_remove)
+    print("===move")
+    print(to_remove)
     for var in to_remove:
         # assignments.pop(var)
-        assignments.assigns[var][:5] = 0
+        assignments.assigns[var][:5] = -1
         assignments.assigns[var][1] = -1
+        #assignments.pop(var)
 
 def clause_status(clause: Clause, assignments: Assignments) -> str:
     """
@@ -163,25 +160,15 @@ def conflict_analysis(clause: torch.tensor, assignments: Assignments, formula: F
     # literals with current decision level
     clause = clause[1:]
     literals = torch.tensor([literal for literal in clause if assignments.assigns[abs(literal)-1][2] == assignments.dl])
-    print(literals, assignments.dl)
+
+    #print(literals, assignments.dl)
     while len(literals) != 1:
-        # implied literals
-        for i in literals:
-            literals = assignments.assigns[assignments.assigns[literals, 1] != -1]
-        # literals = filter(lambda lit: assignments.assigns[abs(lit)-1][1] != -1, literals)
-        if len(clause) == formula.clauses.shape[1]:
-            clause = clause[1:]
-        
-        # select any literal that meets the criterion
-        # problem here!!!!!!
-        print(literals)
-        literal = literals[0][-1]
-        print(literal)
+        # Change the filter of antecedent into -2
+        literals = filter(lambda lit: assignments.assigns[lit, 1] != -2, literals)
+        literal = next(literals)
         antecedent = assignments.assigns[abs(literal)-1][1]
         clause = resolve(clause, formula.clauses[antecedent][1:], abs(literal))
-        # literals with current decision level
         literals = torch.tensor([literal for literal in clause if assignments.assigns[abs(literal)-1][2] == assignments.dl])
-
     # out of the loop, `clause` is now the new learnt clause
     # compute the backtrack level b (second largest decision level)
     decision_levels = sorted(set(assignments.assigns[abs(literal)-1][2] for literal in clause))

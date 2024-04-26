@@ -130,6 +130,8 @@ class Assignments(dict):
     def assign(self, variable, val, antecedent: int):
         # self[variable] = Assignment(value, antecedent, self.dl)
         variable = abs(variable)
+        # print("====>variable")
+        # print(variable)
         self.assigns[variable-1][0] = val
         self.assigns[variable-1][1] = antecedent
         self.assigns[variable-1][2] = self.dl
