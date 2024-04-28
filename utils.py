@@ -6,14 +6,14 @@ from typing import List, Set, Tuple, Optional, Iterator
 from classes import *
 import torch
 
-def cdcl_solve(formula: Formula) -> Optional[Assignments]:
+def cdcl_solve(formula: Formula, args) -> Optional[Assignments]:
     """
     Solve the CNF formula.
 
     If SAT, return the assignments.
     If UNSAT, return None.
     """
-    assignments = Assignments(formula.variables().size(0))
+    assignments = Assignments(formula.variables().size(0), args)
     # First, do unit propagation to assign the initial unit clauses 
     reason, clause = unit_propagation(formula, assignments)
     if reason == 'conflict':
@@ -165,7 +165,7 @@ def conflict_analysis(clause: torch.tensor, assignments: Assignments, formula: F
         return decision_levels[-2].item(), clause
 
 
-def parse_dimacs_cnf(content: str) -> Formula:
+def parse_dimacs_cnf(content: str, args):
     """
     parse the DIMACS cnf file format into corresponding Formula.
     """
@@ -193,5 +193,5 @@ def parse_dimacs_cnf(content: str) -> Formula:
                     clauses[-1].append(lit)
             row_num += 1
     
-    return Formula(clauses, row_num, max_len)
+    return Formula(clauses, row_num, max_len, args)
 

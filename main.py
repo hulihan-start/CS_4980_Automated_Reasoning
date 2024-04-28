@@ -1,21 +1,25 @@
 from utils import *
 import time
+import argparse
 
+parser = argparse.ArgumentParser(description="CDCL arguments")
+
+parser.add_argument('--gpu', action='store_true', help='add our GPU implementation')
+parser.add_argument('--cnf_file', type=str, help='file path')
+
+args = parser.parse_args()
+print(args.gpu)
 
 if __name__ == '__main__':
     # you might comment it to get inconsistent execution time
     random.seed(5201314)
-
-    if len(sys.argv) != 2:
-        print('Provide one DIMACS cnf filename as argument.')
-        sys.exit(1)
         
-    dimacs_cnf = open(sys.argv[1]).read()
+    dimacs_cnf = open(args.cnf_file).read()
     start = time.time()
-    formula = parse_dimacs_cnf(dimacs_cnf)
+    formula = parse_dimacs_cnf(dimacs_cnf, args)
     
     time1 = time.time()
-    result = cdcl_solve(formula)
+    result = cdcl_solve(formula, args)
     time2 = time.time()
     if not result is None:
         print(result[result[:, 4] == 1])

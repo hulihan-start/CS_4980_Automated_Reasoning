@@ -10,7 +10,7 @@ class Formula:
     # clauses: List[Clause]
     # __variables: Set[int]
 
-    def __init__(self, clauses: torch.tensor, row_num, max_len):
+    def __init__(self, clauses: torch.tensor, row_num, max_len, args):
         """
         Remove duplicate literals in clauses.
         """
@@ -22,7 +22,12 @@ class Formula:
                 for i in range(len(uniq_clause), max_len):
                     uniq_clause.append(0)
                 self.clauses.append(uniq_clause)
-        self.clauses = torch.tensor(self.clauses).cuda(0)
+        
+        if args.gpu:
+            self.clauses = torch.tensor(self.clauses).cuda(0)
+        else:
+            self.clauses = torch.tensor(self.clauses)
+
         self.__variables = torch.unique(torch.abs(self.clauses[:, 1:])) #pass
         self.__variables = self.__variables[self.__variables!=0]
 
@@ -51,7 +56,7 @@ class Assignments():
     """
     The assignments, also stores the current decision level.
     """
-    def __init__(self, max_len):
+    def __init__(self, max_len, args):
         super().__init__()
         '''
         self.assigns
@@ -62,7 +67,10 @@ class Assignments():
         4: is in
         5: idx
         '''
-        self.assigns = torch.zeros((max_len, 6), dtype=int).cuda(0)
+        if args.gpu:
+            self.assigns = torch.zeros((max_len, 6), dtype=int).cuda(0)
+        else:
+            self.assigns = torch.zeros((max_len, 6), dtype=int)
         self.assigns[:, 1] = -1
         for i in range(max_len):
             self.assigns[i, 5] = i+1
