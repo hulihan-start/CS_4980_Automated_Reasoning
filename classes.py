@@ -1,28 +1,81 @@
 from dataclasses import dataclass
-from typing import List, Set, Tuple, Optional, Iterator
+from typing import Set, Iterator
 from utils import *
 import torch
-import copy
 
+# frozen to be hashable
+@dataclass(frozen=True)
+class Literal:
+    variable: int
+    negation: bool
+
+    def __repr__(self):
+        if self.negation:
+            return '¬' + str(self.variable)
+        else:
+            return str(self.variable)
+
+    def neg(self) -> 'Literal':
+        """
+        Return the negation of this literal.
+        """
+        return Literal(self.variable, not self.negation)
+
+@dataclass
+class Clause:
+    literals: List[Literal]
+
+    def __repr__(self):
+        return '∨'.join(map(str, self.literals))
+
+    def __iter__(self) -> Iterator[Literal]:
+        return iter(self.literals)
+
+    def __len__(self):
+        return len(self.literals)
+
+    def __hash__(self):
+        x = 0 
+        for lit in self.literals:
+            x ^= hash(lit)
+        return x
+
+class resolve_lit:
+    def __init__(self, val, hash_val):
+        self.val = val
+        self.hash_val = hash_val
+    
+    def __hash__(self):
+        return self.hash_val
 
 @dataclass
 class Formula:
-    # clauses: List[Clause]
-    # __variables: Set[int]
+    """
+    This class represents a logical formula in conjunctive normal form
+    (CNF), where each formula consists of multiple clauses, and each 
+    clause is a disjunction of literals.
+    """
 
-    def __init__(self, clauses: torch.tensor, row_num, max_len, args):
+    def __init__(self, clauses: torch.tensor, max_len, args):
         """
-        Remove duplicate literals in clauses.
+        Initializes the Formula object by processing the input tensor 
+        of clauses to remove duplicate literals and ensuring that all 
+        clauses are of the same length by padding them.
         """
         self.clauses = []
+        
+        
+
         for i, clause in enumerate(clauses):
             if clause != []:
-                uniq_clause = list(set(clause))
+                uniq_clause = Clause(list(set(clause))).literals
                 uniq_clause.insert(0, i)
-                for i in range(len(uniq_clause), max_len):
+                for j in range(1, len(uniq_clause)):
+                    uniq_clause[j] = -uniq_clause[j].variable if uniq_clause[j].negation else uniq_clause[j].variable
+                for j in range(len(uniq_clause), max_len):
                     uniq_clause.append(0)
                 self.clauses.append(uniq_clause)
-        
+                
         if args.gpu:
             self.clauses = torch.tensor(self.clauses).cuda(0)
         else:
@@ -31,32 +84,63 @@ class Formula:
         self.__variables = torch.unique(torch.abs(self.clauses[:, 1:])) #pass
         self.__variables = self.__variables[self.__variables!=0]
 
+        self.max_len = self.__variables.shape[0]
+        self.hash_val = torch.zeros(self.max_len*2, dtype=torch.long)
+        for i, clause in enumerate(clauses):
+            if clause != []:
+                uniq_clause = Clause(list(set(clause))).literals
+                for i in uniq_clause:
+                    val = -i.variable if i.negation else i.variable
+                    self.hash_val[self.abs_offset(val)] = hash(i)
+
     def variables(self) -> Set[int]:
         """
-        Return the set of variables contained in this formula.
+        Returns a set of all unique variables present in the formula.
         """
         return self.__variables
 
     def __repr__(self):
+        """
+        Provides a string representation of the formula, suitable for 
+        debugging or logging.
+        """
         return ' ∧ '.join(f'({"∨".join([str(i) if i>0 else "¬" + str(-i) for i in clause if i!=0])})' for clause in self.clauses[:, 1:].tolist())
 
     def __iter__(self) -> Iterator[torch.tensor]:
+        """
+        Allows the formula to be iterable, making it easy to iterate over 
+        its clauses.
+        """
         return iter(self.clauses)
 
     def __len__(self):
+        """
+        Returns the number of clauses in the formula.
+        """
         return len(self.clauses)
 
-# @dataclass
-# class Assignment:
-#     value: bool
-#     antecedent: Optional[torch.tensor]
-#     dl: int  # decision level
+    def abs_offset(self, a):
+        """
+        Converts a literal into an index position in a data structure used 
+        to track clauses related to literals.
+        """
+        if a < 0:
+            return abs(a)-1 + self.max_len
+        else:
+            return a-1
+
 
 class Assignments():
     """
-    The assignments, also stores the current decision level.
+    This class manages a list of variable assignments for a SAT solver.
+    It includes operations to assign, unassign, and evaluate literals 
+    based on current assignments.
     """
     def __init__(self, max_len, args):
+        """
+        Initializes the Assignments object with space to track 
+        values and metadata for each variable.
+        """
         super().__init__()
         '''
         self.assigns
@@ -79,27 +163,18 @@ class Assignments():
 
     def value(self, literal: int) -> bool:
         """
-        Return the value of the literal with respect the current assignments.
+        Determines the value of a given literal based on current assignments.
         """
-        if literal < 0:
-            if self.assigns[(-literal)-1][3] == 0:
-                self.assigns[(-literal)-1][3] = 1
-                return None
-            if self.assigns[(-literal)-1][0] == 0:
-                return True
-            else:
-                return False
+        if literal<0:
+            return not self.assigns[abs(literal)-1][0] == 1
         else:
-            if self.assigns[literal-1][3] == 0:
-                self.assigns[literal-1][3] = 1
-                return None
-            if self.assigns[literal-1][0] == 0:
-                return False
-            else:
-                return True
+            return self.assigns[abs(literal)-1][0] == 1
 
     def assign(self, variable, val, antecedent: int):
-        # self[variable] = Assignment(value, antecedent, self.dl)
+        """
+        Assigns a value to a variable, along with storing its antecedent 
+        and the current decision level.
+        """
         variable = abs(variable)
         self.assigns[variable-1][0] = val
         self.assigns[variable-1][1] = antecedent
@@ -108,20 +183,19 @@ class Assignments():
         self.assigns[variable-1][4] = 1
 
     def unassign(self, variable: int):
-        self.pop(variable)
+        """
+        Removes an assignment for a variable, effectively making it unassigned.
+        """
+        self.assigns[abs(variable)-1]=0
 
     def satisfy(self, formula: Formula) -> bool:
         """
-        Check whether the assignments actually satisfies the formula. 
+        Checks if the current assignments satisfy the given formula. 
         """
-        # for clause in formula:
-        #     if True not in [self.value(lit) for lit in clause]:
-        #         return False
         for i in formula:
             temp = i[1:]
             if True not in [self.value(lit) if lit !=0 else None for lit in temp]:
                 return False
 
         return True
-
 

@@ -1,33 +1,27 @@
-from utils import *
+from utils import  parse_dimacs_cnf, cdcl_solve
 import time
 import argparse
+import random
 
 parser = argparse.ArgumentParser(description="CDCL arguments")
-
 parser.add_argument('--gpu', action='store_true', help='add our GPU implementation')
 parser.add_argument('--cnf_file', type=str, help='file path')
-
 args = parser.parse_args()
-print(args.gpu)
 
 if __name__ == '__main__':
     # you might comment it to get inconsistent execution time
     random.seed(5201314)
         
-    dimacs_cnf = open(args.cnf_file).read()
-    start = time.time()
+    with open(args.cnf_file, 'r') as file:
+        dimacs_cnf = file.read()
+
     formula = parse_dimacs_cnf(dimacs_cnf, args)
-    
-    time1 = time.time()
     result = cdcl_solve(formula, args)
-    time2 = time.time()
-    if not result is None:
-        print(result[result[:, 4] == 1])
+    
+    if result is not None and result.numel() != 0:
         if not result[result[:, 4] == 1] is None:
-            # assert result.satisfy(formula)
-            print('Formula is SAT with assignments:')
-            assignments = {var.item(): True if result[i][0]==1 else False for i, var in enumerate(formula.variables())}
-            pprint(assignments)
+            print('s SATISFIABLE')
+            assignments = [f'{var.item()}' if result[i][0]==1 else f'-{var.item()}' for i, var in enumerate(formula.variables())]
+            print(' '.join(assignments))
     else:
-        print('Formula is UNSAT.')
-    print('time cost: {}, {}, {}'.format(time.time() - time2, time2-time1, time1-start))
+        print('s UNSATISFIABLE')
