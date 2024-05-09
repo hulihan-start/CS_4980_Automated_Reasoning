@@ -1,5 +1,4 @@
 from utils import  parse_dimacs_cnf, cdcl_solve
-import time
 import argparse
 import random
 

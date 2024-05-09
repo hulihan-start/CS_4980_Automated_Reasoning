@@ -1,8 +1,8 @@
 import random
-from typing import List, Set, Tuple, Optional, Iterator
+from typing import Tuple, Optional
 from classes import *
 import torch
-import re
+
 
 def abs_offset(a, tlength):
     """
@@ -59,6 +59,9 @@ def cdcl_solve(formula: Formula, args) -> Optional[Assignments]:
 
     # First, do unit propagation to assign the initial unit clauses 
     unit_clauses = [clause for clause in formula if len(clause) > 2 and clause[2] == 0]
+    if len(unit_clauses) == 0:
+        return None
+    
     to_propagate = []
     for clause in unit_clauses:
         lit = clause[1]
@@ -371,7 +374,7 @@ def parse_dimacs_cnf(content: str, args):
     clauses = [Clause([])]
     for line in content.splitlines():
         tokens = line.split()
-        if len(tokens) != 0 and tokens[0] not in ("p", "c"):
+        if tokens and (tokens[0].isdigit() or tokens[0][0] == '-'):
             for tok in tokens:
                 try:
                     lit = int(tok)

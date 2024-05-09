@@ -1,15 +1,24 @@
 from dataclasses import dataclass
-from typing import Set, Iterator
+from typing import List, Set, Iterator
 from utils import *
 import torch
 
 # frozen to be hashable
 @dataclass(frozen=True)
 class Literal:
+    """
+    This class represents a literal in propositional logic, which is a
+    variable or its negation. The variable is an integer, and the
+    negation is a boolean value.
+    """
     variable: int
     negation: bool
 
     def __repr__(self):
+        """
+        Provides a string representation of the literal, suitable for
+        debugging or logging.
+        """
         if self.negation:
             return '¬' + str(self.variable)
         else:
@@ -23,29 +32,61 @@ class Literal:
 
 @dataclass
 class Clause:
+    """
+    This class represents a clause in propositional logic, which is a
+    disjunction of literals. The clause is represented as a list of
+    literals.
+    """
     literals: List[Literal]
 
     def __repr__(self):
+        """
+        Provides a string representation of a disjunction of literals,
+        suitable for debugging or logging.
+        """
         return '∨'.join(map(str, self.literals))
 
     def __iter__(self) -> Iterator[Literal]:
+        """
+        Allows the clause to be iterable, making it easy to iterate over
+        its literals.
+        """
         return iter(self.literals)
 
     def __len__(self):
+        """
+        Returns the number of literals in the clause.
+        """
         return len(self.literals)
 
     def __hash__(self):
+        """
+        Returns a hash value for the clause, which is used to compare
+        clauses for equality.
+        """
         x = 0 
         for lit in self.literals:
             x ^= hash(lit)
         return x
 
 class resolve_lit:
+    """
+    This class represents a literal in propositional logic, which is a
+    variable or its negation. The variable is an integer, and the
+    negation is a boolean value.
+    """
     def __init__(self, val, hash_val):
+        """
+        Initializes the Literal object with a variable and a negation.
+        """
         self.val = val
         self.hash_val = hash_val
     
     def __hash__(self):
+        """
+        Returns a hash value for the literal, which is used to compare
+        literals for equality.
+        """
         return self.hash_val
 
 @dataclass
@@ -64,8 +105,6 @@ class Formula:
         """
         self.clauses = []
         
-        
-
         for i, clause in enumerate(clauses):
             if clause != []:
                 uniq_clause = Clause(list(set(clause))).literals
